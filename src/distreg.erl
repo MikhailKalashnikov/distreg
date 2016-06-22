@@ -4,7 +4,7 @@
 -export([reg/1,reg/2,unreg/1,track/1, whereis/1,
 				 call/2,cast/2,inform/2,start/2,
 				 procinfo/1,node_for_name/1,processes/0,
-                 reg_global/2,
+                 reg_global/2, get_g_pid/1,
 				 % Used internally do not call from client.
 				 node_for_hash/2]).
 -include("distreg.hrl").
