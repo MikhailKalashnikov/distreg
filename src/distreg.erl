@@ -153,6 +153,13 @@ processes() ->
 %						 			Unexported utility functions
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+reg_global(Pid, Name) ->
+    case ?CALL({register_global, Pid, Name}) of
+        ok ->
+            {ok, Pid};
+        name_exists ->
+            {error, already_exists}
+    end.
 reg_global(Pid,Name,StartFunction) ->
 	case ?CALL({register_global,Pid,Name}) of
 		ok ->
