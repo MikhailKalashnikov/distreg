@@ -1,0 +1,23 @@
+{application, distreg,
+ [{description, "Distributed process registry"},
+  {vsn, "0.1.0"},
+  {registered, [
+    distreg_sup,
+    distreg_tracker
+  ]},
+  {mod, { distreg_sup, []}},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, [
+    distreg_sup,
+    distreg_tracker,
+    distreg_util,
+    distreg
+  ]},
+  {maintainers, []},
+  {licenses, []},
+  {links, []}
+ ]}.
