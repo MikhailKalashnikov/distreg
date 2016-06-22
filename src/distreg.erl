@@ -8,11 +8,6 @@
 				 % Used internally do not call from client.
 				 node_for_hash/2]).
 -include("distreg.hrl").
-%  -define(NOTEST, 1).
--include_lib("eunit/include/eunit.hrl").
--compile(export_all).
-
-
 
 
 procinfo(Pid) ->
@@ -187,6 +182,8 @@ callstart(Fun) when is_function(Fun) ->
 
 
 -ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-compile(export_all).
 
 -define(SLAVE1,'slave1@127.0.0.1').
 -define(SLAVE2,'slave2@127.0.0.1').
