@@ -28,8 +28,8 @@ start(Name,StartFunction) ->
     case get_g_pid(Name) of
         undefined ->
             Node = node_for_name(Name),
-            case Node == node() of
-                true ->
+            case node() of
+                Node ->
                     case callstart(StartFunction) of
                         {ok,Pid} when is_pid(Pid) ->
                             reg_global(Pid,Name,StartFunction);
@@ -38,7 +38,7 @@ start(Name,StartFunction) ->
                         Err ->
                             Err
                     end;
-                false ->
+                _ ->
                     rpc:call(Node,?MODULE,start,[Name,StartFunction])
             end;
         Pid ->
@@ -52,10 +52,10 @@ call(Name,Msg,Timeout) ->
     case get_g_pid(Name) of
         undefined ->
             Node = node_for_name(Name),
-            case Node == node() of
-                true ->
+            case node() of
+                Node ->
                     {error,worker_not_found};
-                false ->
+                _ ->
                     rpc:call(Node,distreg,call,[Name,Msg,Timeout],Timeout)
             end;
         Pid ->
@@ -66,10 +66,10 @@ cast(Name,Msg) ->
     case get_g_pid(Name) of
         undefined ->
             Node = node_for_name(Name),
-            case Node == node() of
-                true ->
+            case node() of
+                Node ->
                     {error,worker_not_found};
-                false ->
+                _ ->
                     rpc:cast(Node,distreg,cast,[Name,Msg])
             end;
         Pid ->
@@ -80,10 +80,10 @@ inform(Name,Msg) ->
     case get_g_pid(Name) of
         undefined ->
             Node = node_for_name(Name),
-            case Node == node() of
-                true ->
+            case node() of
+                Node ->
                     {error,worker_not_found};
-                false ->
+                _ ->
                     rpc:cast(Node,distreg,inform,[Name,Msg])
             end;
         Pid ->
@@ -118,7 +118,7 @@ node_for_hash(HName,Nodes) ->
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Name = term
-% Result: ok | already_named | name_exists
+% Result: ok | already_named | {name_exists, RegisteredPid}
 reg(Name) ->
     reg(self(),Name).
 reg(Pid,Name) ->
@@ -153,15 +153,15 @@ reg_global(Pid, Name) ->
     case ?CALL({register_global, Pid, Name}) of
         ok ->
             {ok, Pid};
-        name_exists ->
-            {error, already_exists}
+        {name_exists, RegisteredPid} ->
+            {error, already_exists, RegisteredPid}
     end.
 reg_global(Pid,Name,StartFunction) ->
     case ?CALL({register_global,Pid,Name}) of
         ok ->
             {ok,Pid};
         % Name already registered, kill this pid. Calling start again will return existing PID under this name.
-        name_exists ->
+        {name_exists, _RegisteredPid} ->
             exit(Pid,kill),
             start(Name,StartFunction)
     end.
@@ -201,7 +201,7 @@ stopapp(_) ->
 
 startglobal() ->
     startapp(),
-    case node() == 'nonode@nohost' of
+    case node() =:= 'nonode@nohost' of
         true ->
             net_kernel:start(['master@127.0.0.1',longnames]);
         _ ->
@@ -307,7 +307,7 @@ test_proc(Home,N) ->
         {distreg,shouldrestart} ->
             Home ! {self(),should},
             spawn(fun() -> timer:sleep(100), start_test_proc(N) end);
-        {distreg,dienow} ->
+        {distreg,dienow,_RegisteredPid} ->
             Home ! {self(),dienow}
     end.
 

@@ -8,7 +8,7 @@ Distreg will handle nodes leaving or joining as well as any conflicts. Whenever 
 
 Messages a worker might receive from distreg:
  - {distreg,shouldrestart}
- - {distreg,dienow}
+ - {distreg,dienow,RegisteredPid} - RegisteredPid is a pid of the correct process registered on the correct node.  
 
 Similar functionality exists in the global module. Global however only keeps multiple processes from being registered with the same name. It is also quite slow since it syncs the process table across all nodes for every registration. Gproc is another alternative, but it does not handle dynamic cluster reconfigurations and though it is much faster than global, it would still be much slower than distreg for the use case distreg was meant for.
 

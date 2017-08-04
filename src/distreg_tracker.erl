@@ -33,8 +33,8 @@ regpid(Pid,Name,Nametable) ->
             end;
         [{Name,Pid}] ->
             ok;
-        _ ->
-            name_exists
+        [{Name,RegisteredPid}] ->
+            {name_exists, RegisteredPid}
     end.
 
 unregpid(Pid) when is_pid(Pid) ->
@@ -77,8 +77,8 @@ regglobal([{Name,Pid}|T],L) ->
             regglobal(T,L);
         already_named ->
             regglobal(T,L);
-        name_exists ->
-            regglobal(T,[{Name,Pid}|L])
+        {name_exists, ConflictPid} ->
+            regglobal(T,[{Name,Pid,ConflictPid}|L])
     end;
 regglobal([],L) ->
     L.
@@ -105,7 +105,7 @@ handle_call({track,Pid},_From,P) ->
 % Called from other nodes. Sends us processes that should be running on this node.
 % Return: {ok,L}
 %  L - list of workers already registered locally, they need to be killed on the remote node.
-% ProcInfo: [{WorkerName,WorkerPid},..]
+% ProcInfo: [{WorkerName,WorkerPid,RegisteredPid},..]
 handle_call({remote_pids,ProcInfo},_From,P) ->
     {reply,{ok,regglobal(ProcInfo)},P};
 handle_call({register_global,Pid,Name},_From,P) ->
@@ -252,7 +252,7 @@ init([]) ->
     ParticipatingRunningNodes = participating_nodes(ParticipatingNodes),
 
     spawn(fun() ->
-            Ignored = [Nd || Nd <- ParticipatingRunningNodes, is_node_participating(Nd) == false],
+            Ignored = [Nd || Nd <- ParticipatingRunningNodes, is_node_participating(Nd) =:= false],
             [gen_server:cast(?MODULE,{ignore_node,Nd}) || Nd <- Ignored],
             save_nodeinfo_op(Ignored, ParticipatingNodes)
         end),
@@ -286,10 +286,10 @@ save_nodeinfo_op(IgnoredNodes, ParticipatingNodes) ->
             Nodes = list_to_tuple(
                       lists:sort(
                         lists:subtract([node()|participating_nodes(ParticipatingNodes)],IgnoredNodes))),
-            case OldNodes == Nodes of
-                true ->
+            case OldNodes of
+                Nodes ->
                     ok;
-                false ->
+                _ ->
                     Pos = find_myself(1,Nodes),
                     Range = ?MAX_HASH div tuple_size(Nodes),
                     MyRangeFrom = Pos*Range-Range,
@@ -324,13 +324,13 @@ save_nodeinfo_op(IgnoredNodes, ParticipatingNodes) ->
                                 [begin
                                     case node(Pid) /= Node of
                                         true ->
-                                            pid_conflicted(Pid),
+                                            pid_conflicted(Pid, RegisteredPid),
                                             ets:delete(?PIDT,Pid),
                                             ets:delete(?NAMET_GLOBAL,Name);
                                         false ->
                                             ok
                                     end
-                                 end || {Name,Pid} <- L];
+                                 end || {Name,Pid,RegisteredPid} <- L];
                             _X ->
                                 gen_server:cast(?MODULE,{ignore_node,Node}),
                                 gen_server:cast(?MODULE,save_nodeinfo)
@@ -345,8 +345,8 @@ save_nodeinfo_op(IgnoredNodes, ParticipatingNodes) ->
             end
         end.
 
-pid_conflicted(Pid) ->
-    Pid ! {distreg,dienow},
+pid_conflicted(Pid, RegisteredPid) ->
+    Pid ! {distreg,dienow,RegisteredPid},
     spawn(fun() -> timer:sleep(1000),exit(Pid,kill) end).
 
 group([{GK,V,K}|T],L) ->
@@ -359,7 +359,7 @@ group([{GK,V,K}|T],L) ->
 group([],L) ->
     L.
 
-find_myself(N,Nodes) when element(N,Nodes) == node() ->
+find_myself(N,Nodes) when element(N,Nodes) =:= node() ->
     N;
 find_myself(N,Nodes) ->
     find_myself(N+1,Nodes).
