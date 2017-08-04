@@ -84,7 +84,7 @@ regglobal([],L) ->
     L.
 
 
--record(dp,{problem_nodes = [], ignored_nodes = []}).
+-record(dp,{problem_nodes = [], ignored_nodes = [], participating_nodes = []}).
 -define(R2P(Record), distreg_util:rec2prop(Record, record_info(fields, dp))).
 -define(P2R(Prop), distreg_util:prop2rec(Prop, dp, #dp{}, record_info(fields, dp))).
 
@@ -140,8 +140,15 @@ handle_cast({ignore_node,Node},P) ->
 handle_cast({nolonger_ignored,Node},P) ->
     {noreply,P#dp{ignored_nodes = lists:delete(Node,P#dp.ignored_nodes)}};
 handle_cast(save_nodeinfo,P) ->
-    save_nodeinfo(P#dp.ignored_nodes),
+    save_nodeinfo(P#dp.ignored_nodes, P#dp.participating_nodes),
     {noreply,P};
+handle_cast({distreg_nodeup,N}, #dp{participating_nodes = []} = P) -> %% participating_nodes = [] means all nodes are involved
+    handle_info({nodeup,N},P);
+handle_cast({distreg_nodeup,N}, #dp{participating_nodes = ParticipatingNodes} = P) -> %% New node with new list of ParticipatingNodes is started, we need update our list of ParticipatingNodes
+    case lists:member(N, ParticipatingNodes) of
+        true -> handle_info({nodeup,N},P);
+        false -> handle_info({nodeup,N},P#dp{participating_nodes = [N | ParticipatingNodes]})
+    end;
 handle_cast({nodeup,N},P) ->
     handle_info({nodeup,N},P);
 handle_cast({nodeup,Callback,N},P) ->
@@ -168,34 +175,45 @@ handle_info({'DOWN', _Monitor, _, Pid, _Reason},P) ->
     {noreply,P};
 handle_info({nodeup,Node},P) ->
     handle_info({nodeup,true,Node},P);
-handle_info({nodeup,Callback,Node},P) ->
-    % Check if this gen_server is running on that node.
-    spawn(fun() ->
-        case is_node_participating(Node) of
-            true ->
-                case Callback of
-                    true ->
-                        % This is a safety measure to prevent inconsistencies where
-                        %     a node thinking some other node is not participating
-                        rpc:cast(Node,gen_server,cast,[?MODULE,{nodeup,false,Node}]);
-                    false ->
-                        ok
-                end,
-                case lists:member(Node,P#dp.ignored_nodes) of
-                    true ->
-                        gen_server:cast(?MODULE,{nolonger_ignored,Node}),
-                        NL = lists:delete(Node,P#dp.ignored_nodes);
-                    false ->
-                        NL = P#dp.ignored_nodes
-                end,
-                save_nodeinfo_op(NL);
-            false ->
-                gen_server:cast(?MODULE,{ignore_node,Node})
-        end
-    end),
+handle_info({nodeup,Callback,Node}, #dp{participating_nodes = ParticipatingNodes} = P) ->
+    CheckNode =
+        case ParticipatingNodes of
+            [] -> true;
+            _ when Node =:= node() -> true;
+            _ -> lists:member(Node, participating_nodes(P#dp.participating_nodes))
+        end,
+
+    case CheckNode of
+        true ->
+            % Check if this gen_server is running on that node.
+            spawn(fun() ->
+                    case is_node_participating(Node) of
+                        true ->
+                            case Callback of
+                                true ->
+                                    % This is a safety measure to prevent inconsistencies where
+                                    %     a node thinking some other node is not participating
+                                    rpc:cast(Node,gen_server,cast,[?MODULE,{nodeup,false,Node}]);
+                                false ->
+                                    ok
+                            end,
+                            case lists:member(Node,P#dp.ignored_nodes) of
+                                true ->
+                                    gen_server:cast(?MODULE,{nolonger_ignored,Node}),
+                                    NL = lists:delete(Node,P#dp.ignored_nodes);
+                                false ->
+                                    NL = P#dp.ignored_nodes
+                            end,
+                            save_nodeinfo_op(NL, P#dp.participating_nodes);
+                        false ->
+                            gen_server:cast(?MODULE,{ignore_node,Node})
+                    end
+                  end);
+        false -> ok
+    end,
     {noreply,P};
 handle_info({nodedown,_},P) ->
-    save_nodeinfo(P#dp.ignored_nodes),
+    save_nodeinfo(P#dp.ignored_nodes, P#dp.participating_nodes),
     {noreply,P};
 handle_info({stop},P) ->
     handle_info({stop,noreason},P);
@@ -229,27 +247,34 @@ init([]) ->
         _ ->
             ok
     end,
+
+    ParticipatingNodes = application:get_env(distreg, nodes, []),
+    ParticipatingRunningNodes = participating_nodes(ParticipatingNodes),
+
     spawn(fun() ->
-                    Ignored = [Nd || Nd <- nodes(), is_node_participating(Nd) == false],
-                    [gen_server:cast(?MODULE,{ignore_node,Nd}) || Nd <- Ignored],
-                    save_nodeinfo_op(Ignored)
-                 end),
+            Ignored = [Nd || Nd <- ParticipatingRunningNodes, is_node_participating(Nd) == false],
+            [gen_server:cast(?MODULE,{ignore_node,Nd}) || Nd <- Ignored],
+            save_nodeinfo_op(Ignored, ParticipatingNodes)
+        end),
     % Nodeup is specifically sent in the case that distreg was started after nodes have already been connected.
     % Because other nodes will have checked if distreg is running on local node and have determined that it is not.
     % Well written systems should not connect to nodes before all applications have been run however....
-    gen_server:abcast(nodes(),?MODULE,{nodeup,node()}),
-    {ok,#dp{}}.
-
+    % Special message distreg_nodeup is used here in order to update ParticipatingNodes list for already running nodes
+    gen_server:abcast(ParticipatingRunningNodes,?MODULE,{distreg_nodeup,node()}),
+    {ok,#dp{participating_nodes = ParticipatingNodes}}.
 
 is_node_participating(Node) ->
     Res = rpc:call(Node,erlang,whereis,[?MODULE]),
     is_pid(Res).
 
+participating_nodes([]) -> nodes();
+participating_nodes(ParticipatingNodes) ->
+    lists:filter(fun(X) -> lists:member(X, ParticipatingNodes) end, nodes()).
 
-save_nodeinfo(Ignored) ->
-    spawn(fun() -> save_nodeinfo_op(Ignored) end).
+save_nodeinfo(Ignored, ParticipatingNodes) ->
+    spawn(fun() -> save_nodeinfo_op(Ignored, ParticipatingNodes) end).
 % HAS TO BE CALLED IN SEPERATE PROCESS
-save_nodeinfo_op(IgnoredNodes) ->
+save_nodeinfo_op(IgnoredNodes, ParticipatingNodes) ->
     case catch register(distreg_checknodes,self()) of
         true ->
             case ets:lookup(?PIDT,nodes) of
@@ -260,7 +285,7 @@ save_nodeinfo_op(IgnoredNodes) ->
             end,
             Nodes = list_to_tuple(
                       lists:sort(
-                        lists:subtract([node()|nodes()],IgnoredNodes))),
+                        lists:subtract([node()|participating_nodes(ParticipatingNodes)],IgnoredNodes))),
             case OldNodes == Nodes of
                 true ->
                     ok;
@@ -316,7 +341,7 @@ save_nodeinfo_op(IgnoredNodes) ->
             Monitor = erlang:monitor(process,distreg_checknodes),
             receive
                 {'DOWN', Monitor, _, _Pid, _Reason} ->
-                    save_nodeinfo_op(IgnoredNodes)
+                    save_nodeinfo_op(IgnoredNodes, ParticipatingNodes)
             end
         end.
 
