@@ -6,7 +6,7 @@
 
 % When distreg_tracker starts up, check which connected nodes are running distreg. Calc consistent hashing boundaries.
 % Every time a node comes online, check if it is running distreg_tracker.
-% 	If not add it to ignored nodes, but still check again in 10s.
+%   If not add it to ignored nodes, but still check again in 10s.
 %   If yes, recalc consistent hashing boundaries and scann the table of processes.
 % Every time a node goes offline, recalc and scan the table of processes.
 
@@ -176,7 +176,7 @@ handle_info({nodeup,Callback,Node},P) ->
                 case Callback of
                     true ->
                         % This is a safety measure to prevent inconsistencies where
-                        % 	a node thinking some other node is not participating
+                        %     a node thinking some other node is not participating
                         rpc:cast(Node,gen_server,cast,[?MODULE,{nodeup,false,Node}]);
                     false ->
                         ok

@@ -4,21 +4,21 @@
 -include("distreg.hrl").
 
 start(_Type, _Args) ->
-	start_link().
+    start_link().
 stop(_State) ->
-	[exit(Pid,kill) || {Pid,_} <- ets:tab2list(?PIDT)],
-	ok.
+    [exit(Pid,kill) || {Pid,_} <- ets:tab2list(?PIDT)],
+    ok.
 
 start_link() ->
-	supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-	{ok, {{one_for_one, 500, 1},
-		 [
-		{distreg_tracker,
-		 	{distreg_tracker, start, []},
-			 permanent,
-			 100,
-			 worker,
-			[distreg_tracker]}
-		]}}.
+    {ok, {{one_for_one, 500, 1},
+         [
+        {distreg_tracker,
+             {distreg_tracker, start, []},
+             permanent,
+             100,
+             worker,
+            [distreg_tracker]}
+        ]}}.
