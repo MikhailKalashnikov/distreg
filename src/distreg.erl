@@ -3,7 +3,7 @@
 -define(CAST(Msg),gen_server:cast(distreg_tracker,Msg)).
 -export([call/2, call/3, cast/2, inform/2, start/2, get_g_pid/1, node_for_name/1, processes_global/0, reg_global/2]). %% Distributed worker API functions
 -export([reg/1, reg/2, unreg/1, track/1, whereis/1, processes/0]). %% Functions for processes that run only on local node.
--export([procinfo/1]).
+-export([procinfo/1, active_nodes/0]).
 -export([node_for_hash/2]). % Used internally do not call from client.
 -include("distreg.hrl").
 
@@ -16,6 +16,9 @@ procinfo(Pid) ->
             undefined
     end.
 
+active_nodes() ->
+    [{nodes, Nodes}] = ets:lookup(?PIDT, nodes),
+    tuple_to_list(Nodes).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 %                             Distributed worker API functions.
