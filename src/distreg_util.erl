@@ -1,5 +1,5 @@
 -module(distreg_util).
--compile(export_all).
+-export([rec2prop/2, prop2rec/4]).
 
 % record to proplist
 rec2prop(Rec, RecordFields) ->
