@@ -249,6 +249,7 @@ init([]) ->
     end,
 
     ParticipatingNodes = application:get_env(distreg, nodes, []),
+    [net_kernel:connect_node(Node) || Node <- ParticipatingNodes],
     ParticipatingRunningNodes = participating_nodes(ParticipatingNodes),
 
     spawn(fun() ->
